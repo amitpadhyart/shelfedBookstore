@@ -1,0 +1,226 @@
+// Shelfed Bookstore — Prisma schema
+// Run `npx prisma migrate dev --name init` after setting DATABASE_URL
+
+generator client {
+  provider      = "prisma-client-js"
+  // "native" covers local dev on any OS; the musl target covers the
+  // Alpine-based Docker image in the Dockerfile at the repo root.
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Used only for migrations when DATABASE_URL points at a pooled/pgbouncer
+  // connection (Neon, Supabase). Defaults to the same value otherwise —
+  // see DEPLOYMENT.md.
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------- Auth (NextAuth.js standard models) ----------
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+enum Role {
+  CUSTOMER
+  ADMIN
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String? // bcrypt hash, null for OAuth-only accounts
+  role          Role      @default(CUSTOMER)
+  createdAt     DateTime  @default(now())
+
+  accounts  Account[]
+  sessions  Session[]
+  addresses Address[]
+  orders    Order[]
+  wishlist  WishlistItem[]
+  cartItems CartItem[]
+  reviews   Review[]
+}
+
+// ---------- Catalog ----------
+
+enum Format {
+  HARDCOVER
+  PAPERBACK
+  EBOOK
+}
+
+model Book {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String
+  author      String
+  isbn        String   @unique
+  genre       String
+  price       Int // whole rupees
+  coverUrl    String
+  synopsis    String   @db.Text
+  authorBio   String?  @db.Text
+  rating      Float    @default(0)
+  ratingCount Int      @default(0)
+  stock       Int      @default(0)
+  format      Format
+  year        Int
+  featured    Boolean  @default(false)
+  staffPick   Boolean  @default(false)
+  staffNote   String?  @db.Text // handwritten-style staff pick blurb
+  newArrival  Boolean  @default(false)
+  mood        String? // e.g. "slow-sunday", "big-ideas", "rainy-day"
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  reviews      Review[]
+  cartItems    CartItem[]
+  wishlistedBy WishlistItem[]
+  orderItems   OrderItem[]
+
+  @@index([genre])
+  @@index([mood])
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  rating    Int
+  comment   String?  @db.Text
+  bookId    String
+  book      Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([bookId, userId])
+}
+
+// ---------- Cart & Wishlist ----------
+
+model CartItem {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bookId    String
+  book      Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, bookId])
+}
+
+model WishlistItem {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bookId    String
+  book      Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, bookId])
+}
+
+// ---------- Addresses & Orders ----------
+
+model Address {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String? // "Home", "Work"...
+  fullName  String
+  phone     String
+  line1     String
+  line2     String?
+  city      String
+  state     String
+  pincode   String
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  orders    Order[]
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAYMENT_CONFIRMED
+  FULFILLED
+  CANCELLED
+}
+
+model Order {
+  id          String   @id @default(cuid())
+  orderNumber String   @unique
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
+
+  addressId String?
+  address   Address? @relation(fields: [addressId], references: [id])
+
+  // snapshot fields so an order stays intact even if address/user data changes
+  guestName    String
+  guestPhone   String
+  guestLine1   String
+  guestLine2   String?
+  guestCity    String
+  guestState   String
+  guestPincode String
+
+  items    OrderItem[]
+  subtotal Int
+  total    Int
+
+  status    OrderStatus @default(PENDING_PAYMENT)
+  upiRef    String?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@index([status])
+}
+
+model OrderItem {
+  id       String @id @default(cuid())
+  orderId  String
+  order    Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  bookId   String
+  book     Book   @relation(fields: [bookId], references: [id])
+  quantity Int
+  price    Int // price at time of purchase
+  title    String // snapshot of title
+}

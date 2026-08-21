@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: shelfed
+          POSTGRES_PASSWORD: shelfed
+          POSTGRES_DB: shelfed
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://shelfed:shelfed@localhost:5432/shelfed
+      DIRECT_URL: postgresql://shelfed:shelfed@localhost:5432/shelfed
+      NEXTAUTH_SECRET: ci-only-secret-not-for-production
+      NEXTAUTH_URL: http://localhost:3000
+      NEXT_PUBLIC_WHATSAPP_NUMBER: "910000000000"
+      NEXT_PUBLIC_UPI_ID: "ci@upi"
+      NEXT_PUBLIC_UPI_PAYEE_NAME: "CI"
+      NEXT_PUBLIC_SITE_URL: http://localhost:3000
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply migrations
+        run: npx prisma migrate deploy
+
+      - name: Type-check
+        run: npm run type-check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build

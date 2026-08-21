@@ -1,0 +1,75 @@
+# Self-hosted deployment: `docker compose up -d --build`
+#
+# First-time setup, in order:
+#   1. docker compose up -d db
+#   2. docker compose --profile tools run --rm migrate
+#   3. docker compose --profile tools run --rm seed      # optional — demo data
+#   4. docker compose up -d --build app
+#
+# `migrate` and `seed` build from the `builder` stage of the Dockerfile
+# (which still has the full Prisma CLI + devDependencies) rather than the
+# slim `runner` image the app actually runs from, since that final image
+# intentionally doesn't carry the Prisma CLI.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: shelfed
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-shelfed}
+      POSTGRES_DB: shelfed
+    volumes:
+      - shelfed_db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shelfed"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.production
+    environment:
+      DATABASE_URL: postgresql://shelfed:${POSTGRES_PASSWORD:-shelfed}@db:5432/shelfed
+      DIRECT_URL: postgresql://shelfed:${POSTGRES_PASSWORD:-shelfed}@db:5432/shelfed
+
+  migrate:
+    build:
+      context: .
+      target: builder
+    profiles: ["tools"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://shelfed:${POSTGRES_PASSWORD:-shelfed}@db:5432/shelfed
+      DIRECT_URL: postgresql://shelfed:${POSTGRES_PASSWORD:-shelfed}@db:5432/shelfed
+    entrypoint: ["npx", "prisma", "migrate", "deploy"]
+
+  seed:
+    build:
+      context: .
+      target: builder
+    profiles: ["tools"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://shelfed:${POSTGRES_PASSWORD:-shelfed}@db:5432/shelfed
+      DIRECT_URL: postgresql://shelfed:${POSTGRES_PASSWORD:-shelfed}@db:5432/shelfed
+    entrypoint: ["npm", "run", "db:seed"]
+
+volumes:
+  shelfed_db_data:

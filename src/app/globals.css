@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-ink/10;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-paper text-ink font-body antialiased bg-paper-grain;
+    text-rendering: optimizeLegibility;
+  }
+
+  .dark body {
+    @apply bg-night text-paper-soft;
+  }
+
+  h1, h2, h3, h4 {
+    @apply font-display text-ink;
+  }
+  .dark h1, .dark h2, .dark h3, .dark h4 {
+    @apply text-paper-soft;
+  }
+
+  /* Visible, deliberate focus states everywhere — never suppressed. */
+  :focus-visible {
+    outline: 2px solid theme("colors.brass.DEFAULT");
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  ::selection {
+    background: theme("colors.brass.light");
+    color: theme("colors.ink.DEFAULT");
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* Editorial section label — small caps eyebrow used above section headings */
+  .section-label {
+    @apply font-mono text-xs uppercase tracking-[0.18em] text-spine dark:text-brass-light;
+  }
+
+  /* Hairline divider, the kind you'd find between magazine columns */
+  .rule {
+    @apply border-t border-ink/15 dark:border-paper-soft/15;
+  }
+
+  /* Base card surface: a page, not a box */
+  .leaf {
+    @apply bg-paper-soft dark:bg-night-surface border border-ink/10 dark:border-paper-soft/10;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
